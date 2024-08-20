@@ -1,0 +1,193 @@
+﻿@page "/"
+
+<PageTitle>Index</PageTitle>
+
+<h1>Öğrenci Geri Bildirimi Oluşturma</h1>
+
+<button @onclick="StartProcess">Start Process</button>
+<br>
+<br>
+
+<h3>Progress:</h3>
+<p>@progressMessage</p>
+
+<h3>Advice created</h3>
+<p style="width=400px; padding: 30px; background-color: #ccc; margin-top:20px;">@response</p>
+
+@using System.Net.Http;
+@using Newtonsoft.Json;
+@using System.Text;
+@using System.Net.Http.Headers;
+@inject HttpClient Http;
+@using ClosedXML.Excel;
+
+@code {
+    string response = "";
+    string progressMessage = "";
+    string systemContent = "";
+    string userContent = "";
+    double temperature = 0.5;//yaratıcılık
+    double frequencyPenalty = 0.7;// aynı kelimeleri tekrar ettirmeme 
+    double presencePenalty = 0.7;//yeni kelimeler kullandırtma 
+    double topP = 0.5; //olası en iyi yanıtları seçtirme
+    string gptModel = "gpt-4o";
+        
+    private async Task StartProcess()
+    {
+        try
+        {
+            string excelPath = @"C:\Users\Abdurrahman\OneDrive\Masaüstü\gpt.xlsx"; // Excel dosyasının yolu
+            using (var workbook = new XLWorkbook(excelPath))
+            {
+                var worksheet = workbook.Worksheet(1); // İlk sayfa
+
+                // Tüm satırları oku (ID, Prompt ve ChatGptContent içeren sütunlar)
+                var idColumn = worksheet.Column("A");
+                var promptColumn = worksheet.Column("C");
+                var chatGptContentColumn = worksheet.Column("J");
+
+                int rowCount = worksheet.RowsUsed().Count();
+
+                for (int row = 2; row <= rowCount; row++)
+                {
+                    string id = idColumn.Cell(row).GetString();
+                    userContent = promptColumn.Cell(row).GetString();
+                    systemContent = chatGptContentColumn.Cell(row).GetString();
+
+                    for (int i = 0; i < 30; i++)
+                    {
+                        await GenerateAdvice(id); // GPT'ye verileri gönder ve yanıt al
+
+                        // İlerleme mesajı
+                        progressMessage = $"Processing row {row} - Iteration {i + 1}/30";
+                        StateHasChanged();
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            response = $"Error loading Excel: {ex.Message}";
+        }
+    }
+
+    private async Task GenerateAdvice(string id)
+    {
+        var apiKey = "YOUR_KEY";
+        Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        var jsonContent = new
+        {
+            model = gptModel,  // Model ismi
+            messages = new object[]
+            {
+                new
+                {
+                    role = "system",
+                    content = systemContent  // Excel'den alınan system content
+                },
+                new
+                {
+                    role = "user",
+                    content = userContent  // Excel'den alınan user content
+                }
+            },
+            temperature = temperature,
+            max_tokens = 310,
+            top_p = topP, // top_p değeri burada kullanılıyor
+            frequency_penalty = frequencyPenalty,
+            presence_penalty = presencePenalty
+        };
+
+        var content = new StringContent(JsonConvert.SerializeObject(jsonContent), Encoding.UTF8, "application/json");
+
+        try
+        {
+            var result = await Http.PostAsync("https://api.openai.com/v1/chat/completions", content);
+            var resultContent = await result.Content.ReadAsStringAsync();
+
+            if (result.IsSuccessStatusCode)
+            {
+                var resultObject = JsonConvert.DeserializeObject<dynamic>(resultContent);
+                if (resultObject != null && resultObject.choices != null && resultObject.choices.Count > 0)
+                {
+                    response = resultObject.choices[0].message?.content ?? "No response";
+
+                    // Cevapları kaydet
+                    await SaveToExcel(id, userContent, systemContent, response, temperature, gptModel, frequencyPenalty, presencePenalty, topP);
+                }
+                else
+                {
+                    response = "No valid response from the API.";
+                }
+            }
+            else
+            {
+                response = $"API Error: {resultContent}";
+            }
+        }
+        catch (Exception ex)
+        {
+            response = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task SaveToExcel(string id, string userContent, string systemContent, string response, double temperature, string gptModel, double frequencyPenalty, double presencePenalty, double topP)
+    {
+        try
+        {
+            string excelPath = "output.xlsx"; // Kaydedilecek Excel dosyasının yolu
+
+            IXLWorkbook workbook;
+            IXLWorksheet worksheet;
+
+            // Eğer dosya mevcutsa aç, yoksa yeni bir dosya oluştur
+            if (System.IO.File.Exists(excelPath))
+            {
+                workbook = new XLWorkbook(excelPath);
+                worksheet = workbook.Worksheet("Responses");
+            }
+            else
+            {
+                workbook = new XLWorkbook();
+                worksheet = workbook.Worksheets.Add("Responses");
+
+                // Başlıkları ekle
+                worksheet.Cell(1, 1).Value = "ID";
+                worksheet.Cell(1, 2).Value = "User Content";
+                worksheet.Cell(1, 3).Value = "System Content";
+                worksheet.Cell(1, 4).Value = "Response";
+                worksheet.Cell(1, 5).Value = "Temperature";
+                worksheet.Cell(1, 6).Value = "GPT Model";
+                worksheet.Cell(1, 7).Value = "Frequency Penalty";
+                worksheet.Cell(1, 8).Value = "Presence Penalty";
+                worksheet.Cell(1, 9).Value = "Top P"; // Yeni sütun eklendi
+            }
+
+            // Kaç satır kullanıldığını bul ve yeni satıra ekle
+            int lastRow = worksheet.LastRowUsed()?.RowNumber() ?? 1;
+            int newRow = lastRow + 1;
+
+            // Verileri ekle
+            worksheet.Cell(newRow, 1).Value = id;
+            worksheet.Cell(newRow, 2).Value = userContent;
+            worksheet.Cell(newRow, 3).Value = systemContent;
+            worksheet.Cell(newRow, 4).Value = response;
+            worksheet.Cell(newRow, 5).Value = temperature;
+            worksheet.Cell(newRow, 6).Value = gptModel;
+            worksheet.Cell(newRow, 7).Value = frequencyPenalty;
+            worksheet.Cell(newRow, 8).Value = presencePenalty;
+            worksheet.Cell(newRow, 9).Value = topP; // top_p değeri burada kaydediliyor
+
+            workbook.SaveAs(excelPath);
+
+            // Log Mesajı
+            Console.WriteLine($"Row {newRow}: ID={id}, Response saved.");
+        }
+        catch (Exception ex)
+        {
+            response = $"Error saving Excel: {ex.Message}";
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+}
