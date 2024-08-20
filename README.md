@@ -6,6 +6,6 @@ Bu proje, öğrenci geri bildirimlerini GPT-4o modelini kullanarak otomatik olar
 ## Proje İçeriği
  
 - Excel dosyasından öğrenci verilerini okur.
-- GPT-4 API'si kullanılarak öğrenci geri bildirimlerini oluşturur.
+- GPT-4o API'si kullanılarak öğrenci geri bildirimlerini oluşturur.
 - Oluşturulan geri bildirimleri bir Excel dosyasına kaydeder.
 - Süreç boyunca ilerleme mesajlarını görüntüler.
