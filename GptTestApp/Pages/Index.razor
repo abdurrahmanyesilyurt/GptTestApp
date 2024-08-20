@@ -36,7 +36,8 @@
     {
         try
         {
-            string excelPath = @"C:\Users\Abdurrahman\OneDrive\Masaüstü\gpt.xlsx"; // Excel dosyasının yolu
+            string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop); // Masaüstü yolunu alır
+            string excelPath = Path.Combine(desktopPath, "gpt.xlsx"); // Masaüstü yoluna dosya adını ekler
             using (var workbook = new XLWorkbook(excelPath))
             {
                 var worksheet = workbook.Worksheet(1); // İlk sayfa
